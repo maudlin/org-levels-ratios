@@ -37,68 +37,37 @@ function generateFixedLevels(params) {
   let remainingEmployees = total - 1; // Subtract 1 for the root node
   let currentLevel = [data];
   let nextId = 2;
-  let actualLevels = 1;
 
-  // Check if the parameters are compatible
-  const maxPossibleEmployees = (Math.pow(maxReports, levels) - 1) / (maxReports - 1);
-  if (total > maxPossibleEmployees) {
-      console.warn(`Warning: Cannot fit ${total} employees in ${levels} levels with max ${maxReports} reports. Adjusting structure.`);
+  // Calculate the ideal number of nodes at each level
+  let nodesPerLevel = [1]; // Start with 1 for the root node
+  for (let i = 1; i < levels; i++) {
+      let nodes = Math.min(Math.pow(maxReports, i), remainingEmployees);
+      nodesPerLevel.push(nodes);
+      remainingEmployees -= nodes;
   }
 
-  const maxIterations = total * 2; // Safety mechanism to prevent infinite loops
-  let iterations = 0;
+  // Distribute remaining employees to the last level
+  nodesPerLevel[levels - 1] += remainingEmployees;
 
-  while (remainingEmployees > 0 && actualLevels < levels && iterations < maxIterations) {
+  for (let level = 1; level < levels; level++) {
       const newLevel = [];
-      let employeesThisLevel = Math.min(
-          remainingEmployees,
-          currentLevel.length * maxReports,
-          Math.ceil(remainingEmployees / (levels - actualLevels))
-      );
+      const nodesToCreate = nodesPerLevel[level];
+      const nodesInCurrentLevel = currentLevel.length;
 
-      for (const parent of currentLevel) {
-          const reportsForThisNode = Math.min(maxReports, employeesThisLevel);
-          for (let i = 0; i < reportsForThisNode && remainingEmployees > 0; i++) {
-              const node = { id: nextId.toString(), children: [] };
-              parent.children.push(node);
-              newLevel.push(node);
-              nextId++;
-              remainingEmployees--;
-              employeesThisLevel--;
-          }
-          if (remainingEmployees === 0) break;
+      // Distribute nodes among parents in the current level
+      for (let i = 0; i < nodesToCreate; i++) {
+          const parentIndex = i % nodesInCurrentLevel;
+          const parent = currentLevel[parentIndex];
+          const node = { id: nextId.toString(), children: [] };
+          parent.children.push(node);
+          newLevel.push(node);
+          nextId++;
       }
 
-      if (newLevel.length > 0) {
-          actualLevels++;
-          currentLevel = newLevel;
-      } else {
-          break;
-      }
-
-      iterations++;
+      currentLevel = newLevel;
   }
 
-  // Distribute any remaining employees
-  while (remainingEmployees > 0 && iterations < maxIterations) {
-      const leafNodes = getLeafNodes(data);
-      for (const node of leafNodes) {
-          if (node.children.length < maxReports && remainingEmployees > 0) {
-              const newNode = { id: nextId.toString(), children: [] };
-              node.children.push(newNode);
-              nextId++;
-              remainingEmployees--;
-              if (remainingEmployees === 0) break;
-          }
-      }
-      iterations++;
-  }
-
-  if (iterations >= maxIterations) {
-      console.error("Warning: Reached maximum iterations. The hierarchy may be incomplete.");
-  }
-
-  return { data, levels: actualLevels, remainingEmployees };
+  return { data, levels, totalEmployees: total };
 }
 
 function getLeafNodes(node) {
@@ -189,12 +158,9 @@ function generateStrict(params) {
 function generateHierarchy(model, params) {
   let result;
   switch (model) {
-    case "fixedLevels":
-      result = generateFixedLevels(params);
-      if (result.remainingEmployees > 0) {
-          console.warn(`Could not place all employees. ${result.remainingEmployees} employees unassigned.`);
-      }
-      break;
+      case "fixedLevels":
+          result = generateFixedLevels(params);
+          break;
       case "flexible":
           result = generateFlexible(params);
           break;
@@ -206,7 +172,7 @@ function generateHierarchy(model, params) {
   }
 
   // Ensure all employees are accounted for
-  const totalNodes = countNodes(result.data);
+  let totalNodes = countNodes(result.data);
   if (totalNodes !== params.total) {
       console.warn(`Mismatch in employee count. Expected: ${params.total}, Actual: ${totalNodes}`);
       // Add any missing employees as direct reports to the root
@@ -214,6 +180,12 @@ function generateHierarchy(model, params) {
           result.data.children.push({ id: (totalNodes + 1).toString(), children: [] });
           totalNodes++;
       }
+  }
+
+  // Double-check the total count
+  totalNodes = countNodes(result.data);
+  if (totalNodes !== params.total) {
+      console.error(`Error: After adjustment, employee count is still incorrect. Expected: ${params.total}, Actual: ${totalNodes}`);
   }
 
   return result;
@@ -312,7 +284,6 @@ function updateVisualization() {
 
 function updateLegend(root, params, levels) {
   const totalEmployees = params.total;
-  const totalNodes = root.descendants().length;
   const totalManagers = root.descendants().filter(d => d.children && d.children.length > 0).length;
   const nonManagerialStaff = totalEmployees - totalManagers;
   const actualRatio = totalManagers > 0 ? (nonManagerialStaff / totalManagers).toFixed(2) : "N/A";
