@@ -110,6 +110,7 @@ h1 {
   border-radius: 4px;
   padding: 10px;
   margin-bottom: 10px;
+  visibility: hidden;
 }
 
 .color-legend {

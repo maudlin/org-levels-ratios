@@ -78,50 +78,41 @@ function getLeafNodes(node) {
 }
 
 function generateFlexible(params) {
-    const { total, ratio, min, max } = params;
-    let data = { id: "1", children: [] };
-    let remainingEmployees = total - 1;
-    let currentLevel = [data];
-    let nextId = 2;
-    let levels = 1;
+  const { total, ratio, min, max } = params;
+  let data = { id: "1", children: [] };
+  let remainingEmployees = total - 1; // Subtract 1 for the root node
+  let currentLevel = [data];
+  let nextId = 2;
+  let levels = 1;
 
-    while (remainingEmployees > 0) {
-        const newLevel = [];
-        let employeesThisLevel = Math.min(remainingEmployees, currentLevel.length * max);
-        let employeesDistributed = 0;
+  while (remainingEmployees > 0) {
+      const newLevel = [];
+      for (const parent of currentLevel) {
+          const targetReports = Math.min(ratio, max, remainingEmployees);
+          const actualReports = Math.max(min, Math.min(targetReports, max, remainingEmployees));
 
-        while (employeesDistributed < employeesThisLevel && remainingEmployees > 0) {
-            for (const parent of currentLevel) {
-                if (parent.children.length < max && employeesDistributed < employeesThisLevel && remainingEmployees > 0) {
-                    const targetReports = Math.min(ratio, max, remainingEmployees);
-                    const actualReports = Math.max(min, Math.min(targetReports, max - parent.children.length));
+          for (let i = 0; i < actualReports; i++) {
+              const node = { id: nextId.toString(), children: [] };
+              parent.children.push(node);
+              newLevel.push(node);
+              nextId++;
+              remainingEmployees--;
 
-                    for (let i = 0; i < actualReports; i++) {
-                        const node = addEmployee(parent, nextId++);
-                        newLevel.push(node);
-                        remainingEmployees--;
-                        employeesDistributed++;
+              if (remainingEmployees === 0) break;
+          }
 
-                        if (employeesDistributed >= employeesThisLevel || remainingEmployees === 0) {
-                            break;
-                        }
-                    }
-                }
-                if (employeesDistributed >= employeesThisLevel || remainingEmployees === 0) {
-                    break;
-                }
-            }
-        }
+          if (remainingEmployees === 0) break;
+      }
 
-        if (newLevel.length > 0) {
-            levels++;
-            currentLevel = newLevel;
-        } else {
-            break;
-        }
-    }
+      if (newLevel.length > 0) {
+          levels++;
+          currentLevel = newLevel;
+      } else {
+          break;
+      }
+  }
 
-    return { data, levels };
+  return { data, levels };
 }
 
 function generateStrict(params) {
@@ -284,6 +275,7 @@ function updateVisualization() {
 
 function updateLegend(root, params, levels) {
   const totalEmployees = params.total;
+  const totalNodes = root.descendants().length;
   const totalManagers = root.descendants().filter(d => d.children && d.children.length > 0).length;
   const nonManagerialStaff = totalEmployees - totalManagers;
   const actualRatio = totalManagers > 0 ? (nonManagerialStaff / totalManagers).toFixed(2) : "N/A";
@@ -296,39 +288,66 @@ function updateLegend(root, params, levels) {
       <div class="legend-item"><span class="legend-label">Non-Managerial Staff:</span> ${nonManagerialStaff}</div>
       <div class="legend-item"><span class="legend-label">Actual Manager to Staff Ratio:</span> 1:${actualRatio}</div>
       <div class="legend-item"><span class="legend-label">Hierarchy Levels:</span> ${levels}</div>
+  `;
+
+  // Add model-specific information
+  if (currentModel === "flexible") {
+      legendHTML += `
+          <div class="legend-item"><span class="legend-label">Target Ratio:</span> 1:${params.ratio}</div>
+          <div class="legend-item"><span class="legend-label">Min Reports:</span> ${params.min}</div>
+          <div class="legend-item"><span class="legend-label">Max Reports:</span> ${params.max}</div>
+      `;
+  } else if (currentModel === "strict") {
+      legendHTML += `
+          <div class="legend-item"><span class="legend-label">Strict Ratio:</span> 1:${params.ratio}</div>
+      `;
+  } else if (currentModel === "fixedLevels") {
+      legendHTML += `
+          <div class="legend-item"><span class="legend-label">Desired Levels:</span> ${params.levels}</div>
+          <div class="legend-item"><span class="legend-label">Max Reports per Manager:</span> ${params.maxReports}</div>
+      `;
+  }
+
+  // Add report distribution for all models
+  const reportDistribution = getReportDistribution(root);
+  legendHTML += `
+      <div class="legend-item"><span class="legend-label">Report Distribution:</span></div>
+      <ul>
+          ${Object.entries(reportDistribution).map(([reports, count]) =>
+              `<li>${reports} reports: ${count} manager${count !== 1 ? 's' : ''}</li>`
+          ).join('')}
+      </ul>
+  `;
+
+  // Add color legend
+  legendHTML += `
       <h4>Color Legend</h4>
       <div class="color-legend">
   `;
 
-    for (let i = 0; i < levels; i++) {
-        legendHTML += `
-            <div class="color-item">
-                <span class="color-swatch" style="background-color: ${colorScale(i)}; opacity: 0.5;"></span>
-                <span class="color-label">Level ${i + 1}</span>
-            </div>
-        `;
-    }
+  for (let i = 0; i < levels; i++) {
+      legendHTML += `
+          <div class="color-item">
+              <span class="color-swatch" style="background-color: ${colorScale(i)}; opacity: 0.5;"></span>
+              <span class="color-label">Level ${i + 1}</span>
+          </div>
+      `;
+  }
 
-    legendHTML += '</div>';
+  legendHTML += '</div>';
 
-    if (currentModel === "flexible") {
-        legendHTML += `
-            <div class="legend-item"><span class="legend-label">Target Ratio:</span> 1:${params.ratio}</div>
-            <div class="legend-item"><span class="legend-label">Min Reports:</span> ${params.min}</div>
-            <div class="legend-item"><span class="legend-label">Max Reports:</span> ${params.max}</div>
-        `;
-    } else if (currentModel === "strict") {
-        legendHTML += `
-            <div class="legend-item"><span class="legend-label">Strict Ratio:</span> 1:${params.ratio}</div>
-        `;
-    } else if (currentModel === "fixedLevels") {
-        legendHTML += `
-            <div class="legend-item"><span class="legend-label">Desired Levels:</span> ${params.levels}</div>
-            <div class="legend-item"><span class="legend-label">Max Reports per Manager:</span> ${params.maxReports}</div>
-        `;
-    }
+  d3.select("#legend").html(legendHTML);
+}
 
-    d3.select("#legend").html(legendHTML);
+function getReportDistribution(root) {
+  const distribution = {};
+  root.descendants().forEach(node => {
+      if (node.children) {
+          const reportCount = node.children.length;
+          distribution[reportCount] = (distribution[reportCount] || 0) + 1;
+      }
+  });
+  return distribution;
 }
 
 // Event listeners
